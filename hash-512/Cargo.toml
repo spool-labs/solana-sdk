@@ -20,7 +20,7 @@ atomic = ["dep:solana-atomic-u64"]
 borsh = ["dep:borsh"]
 bytemuck = ["copy", "dep:bytemuck", "dep:bytemuck_derive"]
 copy = []
-decode = ["dep:five8", "solana-hash/decode"]
+decode = ["dep:tape-base58", "solana-hash/decode"]
 default = []
 frozen-abi = ["dep:solana-frozen-abi", "dep:solana-frozen-abi-macro"]
 serde = ["dep:serde", "dep:serde_derive", "dep:serde-big-array"]
@@ -30,7 +30,7 @@ wincode = ["dep:wincode"]
 borsh = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
 bytemuck_derive = { workspace = true, optional = true }
-five8 = { workspace = true, optional = true }
+tape-base58 = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde-big-array = { workspace = true, optional = true }
 serde_derive = { workspace = true, optional = true }

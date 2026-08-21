@@ -71,7 +71,7 @@ impl AsRef<[u8]> for Hash512 {
 #[cfg(feature = "decode")]
 fn write_as_base58(f: &mut fmt::Formatter, h: &Hash512) -> fmt::Result {
     let mut out = [0u8; MAX_BASE58_LEN];
-    let len = five8::encode_64(&h.0, &mut out) as usize;
+    let len = tape_base58::encode_64(&h.0, &mut out) as usize;
     // any sequence of base58 chars is valid utf8
     let as_str = unsafe { from_utf8_unchecked(&out[..len]) };
     f.write_str(as_str)
@@ -96,16 +96,16 @@ impl FromStr for Hash512 {
     type Err = ParseHashError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use five8::DecodeError;
+        use tape_base58::DecodeError;
         if s.len() > MAX_BASE58_LEN {
             return Err(ParseHashError::WrongSize);
         }
         let mut bytes = [0; HASH_BYTES];
-        five8::decode_64(s, &mut bytes).map_err(|e| match e {
-            DecodeError::InvalidChar(_) => ParseHashError::Invalid,
+        tape_base58::decode_64(s.as_bytes(), &mut bytes).map_err(|e| match e {
+            DecodeError::InvalidCharacter(_) => ParseHashError::Invalid,
             DecodeError::TooLong
             | DecodeError::TooShort
-            | DecodeError::LargestTermTooHigh
+            | DecodeError::ValueTooLarge
             | DecodeError::OutputTooLong => ParseHashError::WrongSize,
         })?;
         Ok(Self::from(bytes))

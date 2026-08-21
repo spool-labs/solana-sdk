@@ -115,16 +115,16 @@ impl FromStr for Address {
     type Err = ParseAddressError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use five8::DecodeError;
+        use tape_base58::DecodeError;
         if s.len() > MAX_BASE58_LEN {
             return Err(ParseAddressError::WrongSize);
         }
         let mut bytes = [0; ADDRESS_BYTES];
-        five8::decode_32(s, &mut bytes).map_err(|e| match e {
-            DecodeError::InvalidChar(_) => ParseAddressError::Invalid,
+        tape_base58::decode_32(s.as_bytes(), &mut bytes).map_err(|e| match e {
+            DecodeError::InvalidCharacter(_) => ParseAddressError::Invalid,
             DecodeError::TooLong
             | DecodeError::TooShort
-            | DecodeError::LargestTermTooHigh
+            | DecodeError::ValueTooLarge
             | DecodeError::OutputTooLong => ParseAddressError::WrongSize,
         })?;
         Ok(Address(bytes))
@@ -191,7 +191,7 @@ pub fn bytes_are_curve_point<T: AsRef<[u8]>>(bytes: T) -> bool {
         #[cfg(feature = "curve25519")]
         {
             let Ok(compressed_edwards_y) =
-                curve25519_dalek::edwards::CompressedEdwardsY::from_slice(bytes.as_ref())
+                solana_ed25519::edwards::CompressedEdwardsY::from_slice(bytes.as_ref())
             else {
                 return false;
             };
@@ -343,7 +343,7 @@ impl AsMut<[u8]> for Address {
 #[cfg(feature = "decode")]
 fn write_as_base58(f: &mut core::fmt::Formatter, p: &Address) -> core::fmt::Result {
     let mut out = [0u8; MAX_BASE58_LEN];
-    let len = five8::encode_32(&p.0, &mut out) as usize;
+    let len = tape_base58::encode_32(&p.0, &mut out) as usize;
     // any sequence of base58 chars is valid utf8
     let as_str = unsafe { core::str::from_utf8_unchecked(&out[..len]) };
     f.write_str(as_str)
@@ -520,7 +520,7 @@ mod tests {
 
     fn encode_address(address: &[u8; 32]) -> String {
         let mut buffer = [0u8; 44];
-        let count = five8::encode_32(address, &mut buffer);
+        let count = tape_base58::encode_32(address, &mut buffer);
         from_utf8(&buffer[..count as usize]).unwrap().to_string()
     }
 
