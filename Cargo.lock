@@ -3146,6 +3146,7 @@ dependencies = [
  "borsh",
  "bytemuck",
  "bytemuck_derive",
+ "criterion",
  "five8_const",
  "rand 0.9.5",
  "serde",

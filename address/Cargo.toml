@@ -72,8 +72,9 @@ tape-sha256 = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
+criterion = { workspace = true }
 solana-account-info = { path = "../account-info" }
-solana-address = { path = ".", features = ["atomic", "borsh", "curve25519", "decode", "dev-context-only-utils", "error", "nullable", "sanitize", "sha2", "std", "syscalls"] }
+solana-address = { path = ".", features = ["atomic", "batch-pda", "borsh", "curve25519", "decode", "dev-context-only-utils", "error", "nullable", "sanitize", "sha2", "std", "syscalls"] }
 solana-cpi = { path = "../cpi" }
 solana-example-mocks = { path = "../example-mocks" }
 solana-hash = { workspace = true }
@@ -82,6 +83,20 @@ solana-program-error = { workspace = true, features = ["borsh"] }
 solana-system-interface = { path = "../system-interface", features = ["bincode"] }
 strum = { workspace = true }
 strum_macros = { workspace = true }
+solana-sha256-hasher = { workspace = true, features = ["sha2"] }
+tape-sha256 = { workspace = true }
+
+[[bench]]
+name = "pda"
+harness = false
+
+[[bench]]
+name = "pda_primitives"
+harness = false
+
+[[bench]]
+name = "pda_batch"
+harness = false
 
 [lints]
 workspace = true
