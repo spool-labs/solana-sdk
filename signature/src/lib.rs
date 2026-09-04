@@ -222,7 +222,7 @@ impl AsRef<[u8]> for Signature {
 
 fn write_as_base58(f: &mut fmt::Formatter, s: &Signature) -> fmt::Result {
     let mut out = [0u8; MAX_BASE58_SIGNATURE_LEN];
-    let len = five8::encode_64(&s.0, &mut out) as usize;
+    let len = tape_base58::encode_64(&s.0, &mut out) as usize;
     // any sequence of base58 chars is valid utf8
     let as_str = unsafe { from_utf8_unchecked(&out[..len]) };
     f.write_str(as_str)
@@ -298,16 +298,16 @@ impl FromStr for Signature {
     type Err = ParseSignatureError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use five8::DecodeError;
+        use tape_base58::DecodeError;
         if s.len() > MAX_BASE58_SIGNATURE_LEN {
             return Err(ParseSignatureError::WrongSize);
         }
         let mut bytes = [0; SIGNATURE_BYTES];
-        five8::decode_64(s, &mut bytes).map_err(|e| match e {
-            DecodeError::InvalidChar(_) => ParseSignatureError::Invalid,
+        tape_base58::decode_64(s.as_bytes(), &mut bytes).map_err(|e| match e {
+            DecodeError::InvalidCharacter(_) => ParseSignatureError::Invalid,
             DecodeError::TooLong
             | DecodeError::TooShort
-            | DecodeError::LargestTermTooHigh
+            | DecodeError::ValueTooLarge
             | DecodeError::OutputTooLong => ParseSignatureError::WrongSize,
         })?;
         Ok(Self::from(bytes))

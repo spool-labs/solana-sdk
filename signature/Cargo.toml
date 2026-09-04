@@ -2,7 +2,7 @@
 name = "solana-signature"
 description = "Solana 64-byte signature type"
 documentation = "https://docs.rs/solana-signature"
-version = "3.5.2"
+version = "3.4.1"
 rust-version = { workspace = true }
 authors = { workspace = true }
 repository = { workspace = true }
@@ -31,7 +31,7 @@ wincode = ["dep:wincode"]
 [dependencies]
 bytemuck = { workspace = true, optional = true }
 bytemuck_derive = { workspace = true, optional = true }
-five8 = { workspace = true }
+tape-base58 = { workspace = true }
 rand = { workspace = true, optional = true }
 rayon = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }

@@ -2,7 +2,7 @@
 name = "solana-address"
 description = "Solana account addresses"
 documentation = "https://docs.rs/solana-address"
-version = "2.7.0"
+version = "2.6.1"
 rust-version = { workspace = true }
 authors = { workspace = true }
 repository = { workspace = true }
@@ -18,10 +18,11 @@ rustdoc-args = ["--cfg=docsrs"]
 [features]
 atomic = ["dep:solana-atomic-u64"]
 borsh = ["dep:borsh", "alloc"]
+batch-pda = ["curve25519", "dep:tape-sha256", "std"]
 bytemuck = ["copy", "dep:bytemuck", "dep:bytemuck_derive"]
 copy = []
-curve25519 = ["dep:curve25519-dalek", "sha2", "syscalls"]
-decode = ["dep:five8", "dep:five8_const", "error"]
+curve25519 = ["dep:solana-ed25519", "sha2", "syscalls"]
+decode = ["dep:five8_const", "dep:tape-base58", "error"]
 dev-context-only-utils = ["dep:arbitrary", "rand"]
 error = ["dep:solana-program-error"]
 frozen-abi = [
@@ -45,8 +46,8 @@ arbitrary = { workspace = true, features = ["derive"], optional = true }
 borsh = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
 bytemuck_derive = { workspace = true, optional = true }
-five8 = { workspace = true, optional = true }
 five8_const = { workspace = true, optional = true }
+tape-base58 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_derive = { workspace = true, optional = true }
@@ -64,13 +65,16 @@ solana-define-syscall = { workspace = true, optional = true }
 solana-sha256-hasher = { workspace = true, optional = true }
 
 [target.'cfg(not(any(target_os = "solana", target_arch = "bpf")))'.dependencies]
-curve25519-dalek = { workspace = true, optional = true }
+solana-ed25519 = { workspace = true, optional = true }
 solana-sha256-hasher = { workspace = true, features = ["sha2"], optional = true }
+# Multi-buffer SHA-256 for batched PDA bump grinding; std-only, host-only
+tape-sha256 = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
+criterion = { workspace = true }
 solana-account-info = { path = "../account-info" }
-solana-address = { path = ".", features = ["atomic", "borsh", "curve25519", "decode", "dev-context-only-utils", "error", "nullable", "sanitize", "sha2", "std", "syscalls"] }
+solana-address = { path = ".", features = ["atomic", "batch-pda", "borsh", "curve25519", "decode", "dev-context-only-utils", "error", "nullable", "sanitize", "sha2", "std", "syscalls"] }
 solana-cpi = { path = "../cpi" }
 solana-example-mocks = { path = "../example-mocks" }
 solana-hash = { workspace = true }
@@ -79,6 +83,20 @@ solana-program-error = { workspace = true, features = ["borsh"] }
 solana-system-interface = { path = "../system-interface", features = ["bincode"] }
 strum = { workspace = true }
 strum_macros = { workspace = true }
+solana-sha256-hasher = { workspace = true, features = ["sha2"] }
+tape-sha256 = { workspace = true }
+
+[[bench]]
+name = "pda"
+harness = false
+
+[[bench]]
+name = "pda_primitives"
+harness = false
+
+[[bench]]
+name = "pda_batch"
+harness = false
 
 [lints]
 workspace = true

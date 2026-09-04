@@ -55,7 +55,7 @@ impl Keypair {
     /// Recovers a `Keypair` from a base58-encoded string
     pub fn try_from_base58_string(s: &str) -> Result<Self, SignatureError> {
         let mut buf = [0u8; KEYPAIR_LENGTH];
-        five8::decode_64(s, &mut buf).map_err(SignatureError::from_source)?;
+        tape_base58::decode_64(s.as_bytes(), &mut buf).map_err(SignatureError::from_source)?;
         Self::try_from(&buf[..])
     }
 
@@ -71,8 +71,8 @@ impl Keypair {
 
     /// Returns this `Keypair` as a base58-encoded string
     pub fn to_base58_string(&self) -> String {
-        let mut out = [0u8; five8::BASE58_ENCODED_64_MAX_LEN];
-        let len = five8::encode_64(&self.to_bytes(), &mut out);
+        let mut out = [0u8; tape_base58::MAX_ENCODED_64];
+        let len = tape_base58::encode_64(&self.to_bytes(), &mut out);
         unsafe { String::from_utf8_unchecked(out[..len as usize].to_vec()) }
     }
 

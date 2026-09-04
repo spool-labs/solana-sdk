@@ -2,7 +2,7 @@
 name = "solana-hash"
 description = "Solana wrapper for the 32-byte output of a hashing algorithm."
 documentation = "https://docs.rs/solana-hash"
-version = "4.6.0"
+version = "4.5.0"
 rust-version = { workspace = true }
 authors = { workspace = true }
 repository = { workspace = true }
@@ -20,7 +20,7 @@ atomic = ["dep:solana-atomic-u64"]
 borsh = ["dep:borsh"]
 bytemuck = ["copy", "dep:bytemuck", "dep:bytemuck_derive"]
 copy = []
-decode = ["dep:five8"]
+decode = ["dep:tape-base58"]
 default = []
 frozen-abi = ["dep:solana-frozen-abi", "dep:solana-frozen-abi-macro"]
 rand = ["dep:rand"]
@@ -33,7 +33,7 @@ wincode = ["dep:wincode"]
 borsh = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
 bytemuck_derive = { workspace = true, optional = true }
-five8 = { workspace = true, optional = true }
+tape-base58 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_derive = { workspace = true, optional = true }

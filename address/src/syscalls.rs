@@ -18,6 +18,198 @@ pub use solana_define_syscall::definitions::{
 #[cfg(any(target_os = "solana", target_arch = "bpf"))]
 const SUCCESS: u64 = 0;
 
+/// Grinds bumps with the shared seeds and program id segments hashed once
+#[cfg(all(
+    not(any(target_os = "solana", target_arch = "bpf")),
+    feature = "batch-pda"
+))]
+fn try_find_program_address_reuse(seeds: &[&[u8]], program_id: &Address) -> Option<(Address, u8)> {
+    // One lane on purpose, a derivation only offers about two useful hashes
+    try_find_program_address_width(seeds, program_id, 1)
+}
+
+#[cfg(all(
+    not(any(target_os = "solana", target_arch = "bpf")),
+    feature = "batch-pda"
+))]
+fn try_find_program_address_width(
+    seeds: &[&[u8]],
+    program_id: &Address,
+    width: usize,
+) -> Option<(Address, u8)> {
+    use crate::{ADDRESS_BYTES, MAX_SEEDS, MAX_SEED_LEN, PDA_MARKER};
+
+    // Seed count and length limits do not depend on the bump, so settle them once
+    if seeds.len() >= MAX_SEEDS {
+        return None;
+    }
+    if seeds.iter().any(|seed| seed.len() > MAX_SEED_LEN) {
+        return None;
+    }
+
+    let mut prefix = [0u8; MAX_SEEDS * MAX_SEED_LEN];
+    let mut prefix_len = 0usize;
+    for seed in seeds {
+        prefix[prefix_len..prefix_len + seed.len()].copy_from_slice(seed);
+        prefix_len += seed.len();
+    }
+    let prefix = &prefix[..prefix_len];
+
+    let mut tail = [0u8; ADDRESS_BYTES + PDA_MARKER.len()];
+    tail[..ADDRESS_BYTES].copy_from_slice(program_id.as_ref());
+    tail[ADDRESS_BYTES..].copy_from_slice(PDA_MARKER);
+
+    const MAX_GROUP: usize = 8;
+    let width = width.clamp(1, MAX_GROUP);
+
+    // Bumps run 255 down to 1 like the serial loop, bump 0 is never reached
+    let mut bumps = [0u8; MAX_GROUP];
+    let mut digests = [[0u8; 32]; MAX_GROUP];
+    let mut next: u8 = u8::MAX;
+    let mut remaining = usize::from(u8::MAX);
+
+    while remaining > 0 {
+        let group = width.min(remaining);
+        for bump in bumps.iter_mut().take(group) {
+            *bump = next;
+            next = next.wrapping_sub(1);
+        }
+
+        // Built at full width; only the first `group` entries are handed over.
+        let msgs: [tape_sha256::Message<'_>; MAX_GROUP] =
+            core::array::from_fn(|slot| tape_sha256::Message {
+                prefix,
+                body: core::slice::from_ref(&bumps[slot]),
+                tail: &tail,
+            });
+        tape_sha256::hash_messages(&msgs[..group], &mut digests[..group]);
+
+        for slot in 0..group {
+            if !bytes_are_curve_point(digests[slot]) {
+                return Some((Address::from(digests[slot]), bumps[slot]));
+            }
+        }
+        remaining -= group;
+    }
+
+    None
+}
+
+/// Canonical PDAs for many seed sets in one pass, one out slot per set, None where underivable
+#[cfg(all(
+    not(any(target_os = "solana", target_arch = "bpf")),
+    feature = "batch-pda"
+))]
+pub fn find_program_addresses(
+    seed_sets: &[&[&[u8]]],
+    program_id: &Address,
+    out: &mut [Option<(Address, u8)>],
+) {
+    use {
+        crate::{ADDRESS_BYTES, MAX_SEEDS, MAX_SEED_LEN, PDA_MARKER},
+        alloc::vec::Vec,
+    };
+
+    assert_eq!(
+        seed_sets.len(),
+        out.len(),
+        "find_program_addresses needs one output slot per seed set"
+    );
+
+    const MAX_LANES: usize = 16;
+    let width = tape_sha256::lane_width().clamp(1, MAX_LANES);
+
+    let mut tail = [0u8; ADDRESS_BYTES + PDA_MARKER.len()];
+    tail[..ADDRESS_BYTES].copy_from_slice(program_id.as_ref());
+    tail[ADDRESS_BYTES..].copy_from_slice(PDA_MARKER);
+
+    // Every set's seeds back to back, so a message borrows its prefix instead of rebuilding it
+    let mut arena = Vec::new();
+    let mut spans = Vec::with_capacity(seed_sets.len());
+    let mut bumps = alloc::vec![u8::MAX; seed_sets.len()];
+    let mut live = Vec::with_capacity(seed_sets.len());
+
+    for (i, set) in seed_sets.iter().enumerate() {
+        out[i] = None;
+        let start = arena.len();
+        // The bump joins the seeds, so the count limit is one tighter
+        if set.len() >= MAX_SEEDS || set.iter().any(|seed| seed.len() > MAX_SEED_LEN) {
+            spans.push(start..start);
+            continue;
+        }
+        for seed in *set {
+            arena.extend_from_slice(seed);
+        }
+        spans.push(start..arena.len());
+        live.push(i);
+    }
+
+    let mut digests = [[0u8; 32]; MAX_LANES];
+    let mut group_bumps = [0u8; MAX_LANES];
+    let mut next = Vec::with_capacity(live.len());
+
+    while !live.is_empty() {
+        next.clear();
+        for group in live.chunks(width) {
+            for (slot, &i) in group.iter().enumerate() {
+                group_bumps[slot] = bumps[i];
+            }
+
+            let msgs: [tape_sha256::Message<'_>; MAX_LANES] = core::array::from_fn(|slot| {
+                let slot = slot.min(group.len() - 1);
+                tape_sha256::Message {
+                    prefix: &arena[spans[group[slot]].clone()],
+                    body: core::slice::from_ref(&group_bumps[slot]),
+                    tail: &tail,
+                }
+            });
+            tape_sha256::hash_messages(&msgs[..group.len()], &mut digests[..group.len()]);
+
+            for (slot, &i) in group.iter().enumerate() {
+                if !bytes_are_curve_point(digests[slot]) {
+                    out[i] = Some((Address::from(digests[slot]), bumps[i]));
+                } else if bumps[i] > 1 {
+                    // Bumps run 255 down to 1, matching the serial loop
+                    bumps[i] -= 1;
+                    next.push(i);
+                }
+            }
+        }
+        core::mem::swap(&mut live, &mut next);
+    }
+}
+
+/// The bump grind as a plain descending loop, kept so the batched path can be checked against it
+#[cfg(all(
+    not(any(target_os = "solana", target_arch = "bpf")),
+    feature = "curve25519"
+))]
+#[cfg_attr(feature = "batch-pda", allow(dead_code))]
+fn try_find_program_address_serial(seeds: &[&[u8]], program_id: &Address) -> Option<(Address, u8)> {
+    use crate::MAX_SEEDS;
+
+    // Seed limits fail for every bump alike, settling them here keeps the candidates on the stack
+    if seeds.len() >= MAX_SEEDS {
+        return None;
+    }
+
+    let mut bump_seed = [u8::MAX];
+    for _ in 0..u8::MAX {
+        {
+            let mut seeds_with_bump = [&[][..]; MAX_SEEDS];
+            seeds_with_bump[..seeds.len()].copy_from_slice(seeds);
+            seeds_with_bump[seeds.len()] = &bump_seed;
+            match Address::create_program_address(&seeds_with_bump[..=seeds.len()], program_id) {
+                Ok(address) => return Some((address, bump_seed[0])),
+                Err(AddressError::InvalidSeeds) => (),
+                _ => break,
+            }
+        }
+        bump_seed[0] -= 1;
+    }
+    None
+}
+
 impl Address {
     /// Log an `Address` value.
     #[cfg(any(target_os = "solana", target_arch = "bpf"))]
@@ -305,20 +497,14 @@ impl Address {
         // not supported
         #[cfg(not(any(target_os = "solana", target_arch = "bpf")))]
         {
-            let mut bump_seed = [u8::MAX];
-            for _ in 0..u8::MAX {
-                {
-                    let mut seeds_with_bump = seeds.to_vec();
-                    seeds_with_bump.push(&bump_seed);
-                    match Self::create_program_address(&seeds_with_bump, program_id) {
-                        Ok(address) => return Some((address, bump_seed[0])),
-                        Err(AddressError::InvalidSeeds) => (),
-                        _ => break,
-                    }
-                }
-                bump_seed[0] -= 1;
+            #[cfg(feature = "batch-pda")]
+            {
+                try_find_program_address_reuse(seeds, program_id)
             }
-            None
+            #[cfg(not(feature = "batch-pda"))]
+            {
+                try_find_program_address_serial(seeds, program_id)
+            }
         }
         // Call via a system call to perform the calculation
         #[cfg(any(target_os = "solana", target_arch = "bpf"))]
@@ -439,5 +625,233 @@ impl Address {
                 _ => Err(result.into()),
             }
         }
+    }
+}
+
+#[cfg(all(
+    test,
+    not(any(target_os = "solana", target_arch = "bpf")),
+    feature = "batch-pda"
+))]
+mod batch_pda_tests {
+    use {
+        super::{
+            find_program_addresses, try_find_program_address_serial, try_find_program_address_width,
+        },
+        crate::{Address, MAX_SEEDS, MAX_SEED_LEN},
+        alloc::vec::Vec,
+    };
+
+    fn try_find_program_address_width_default(
+        seeds: &[&[u8]],
+        program_id: &Address,
+    ) -> Option<(Address, u8)> {
+        try_find_program_address_width(seeds, program_id, tape_sha256::lane_width())
+    }
+
+    /// xorshift64*, so the cases are varied but the failures are reproducible
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        }
+
+        fn below(&mut self, n: usize) -> usize {
+            (self.next() % n as u64) as usize
+        }
+
+        fn bytes(&mut self, out: &mut [u8]) {
+            for byte in out.iter_mut() {
+                *byte = self.next() as u8;
+            }
+        }
+    }
+
+    /// Batched and serial grinds must agree on both the address and the bump
+    #[test]
+    fn batched_matches_serial() {
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        let mut crossed_a_group = 0usize;
+
+        for _ in 0..2000 {
+            let mut program_id = [0u8; 32];
+            rng.bytes(&mut program_id);
+            let program_id = Address::from(program_id);
+
+            // Up to MAX_SEEDS - 1, since the bump occupies the last slot
+            let count = rng.below(MAX_SEEDS);
+            let mut storage = [[0u8; MAX_SEED_LEN]; MAX_SEEDS];
+            let mut lens = [0usize; MAX_SEEDS];
+            for i in 0..count {
+                lens[i] = rng.below(MAX_SEED_LEN + 1);
+                rng.bytes(&mut storage[i][..lens[i]]);
+            }
+            let seeds: Vec<&[u8]> = (0..count).map(|i| &storage[i][..lens[i]]).collect();
+
+            let batched = try_find_program_address_width_default(&seeds, &program_id);
+            let serial = try_find_program_address_serial(&seeds, &program_id);
+            assert_eq!(batched, serial, "seeds={seeds:?} program_id={program_id:?}");
+
+            // A bump below 248 means the grind ran past the first lane group
+            if let Some((_, bump)) = batched {
+                if bump < u8::MAX - 8 {
+                    crossed_a_group += 1;
+                }
+            }
+        }
+
+        assert!(
+            crossed_a_group > 0,
+            "no case exercised the multi-group path; the test is not covering it"
+        );
+    }
+
+    /// Seed count and length violations return None from both paths
+    #[test]
+    fn rejections_match() {
+        let program_id = Address::from([7u8; 32]);
+        let long = [0u8; MAX_SEED_LEN + 1];
+        let ok = [1u8; 4];
+
+        // Exactly MAX_SEEDS leaves no room for the bump
+        let full: Vec<&[u8]> = alloc::vec![&ok[..]; MAX_SEEDS];
+        assert_eq!(
+            try_find_program_address_width_default(&full, &program_id),
+            try_find_program_address_serial(&full, &program_id),
+        );
+        assert_eq!(
+            try_find_program_address_width_default(&full, &program_id),
+            None
+        );
+
+        // One seed over the length limit
+        let over: [&[u8]; 2] = [&ok, &long];
+        assert_eq!(
+            try_find_program_address_width_default(&over, &program_id),
+            try_find_program_address_serial(&over, &program_id),
+        );
+        assert_eq!(
+            try_find_program_address_width_default(&over, &program_id),
+            None
+        );
+
+        // No seeds at all is legal
+        let none: [&[u8]; 0] = [];
+        assert_eq!(
+            try_find_program_address_width_default(&none, &program_id),
+            try_find_program_address_serial(&none, &program_id),
+        );
+        assert!(try_find_program_address_width_default(&none, &program_id).is_some());
+    }
+
+    /// Both paths must reproduce a PDA derived by the documented construction
+    #[test]
+    fn agrees_with_find_program_address() {
+        let program_id = Address::from([3u8; 32]);
+        let seeds: [&[u8]; 2] = [b"metadata", b"mint"];
+
+        let (expected, bump) = Address::find_program_address(&seeds, &program_id);
+        let bump_seed = [bump];
+        let with_bump: [&[u8]; 3] = [b"metadata", b"mint", &bump_seed];
+
+        assert_eq!(
+            Address::create_program_address(&with_bump, &program_id).unwrap(),
+            expected,
+        );
+        assert_eq!(
+            try_find_program_address_width_default(&seeds, &program_id),
+            Some((expected, bump)),
+        );
+    }
+
+    /// Batching across sets must not change any single set's answer
+    #[test]
+    fn batch_across_sets_matches_serial() {
+        let mut rng = Rng(0x3f8a_11c4_9d02_7e65);
+        let program_id = Address::new_from_array([3u8; 32]);
+
+        let mut owned: Vec<Vec<Vec<u8>>> = Vec::new();
+        for i in 0..384 {
+            // Every 32nd set is underivable on purpose
+            if i % 32 == 7 {
+                owned.push(alloc::vec![alloc::vec![1u8; MAX_SEED_LEN + 1]]);
+                continue;
+            }
+            if i % 32 == 15 {
+                owned.push((0..MAX_SEEDS).map(|_| alloc::vec![2u8; 4]).collect());
+                continue;
+            }
+            let count = 1 + rng.below(3);
+            owned.push(
+                (0..count)
+                    .map(|_| {
+                        let mut seed = alloc::vec![0u8; 1 + rng.below(MAX_SEED_LEN)];
+                        rng.bytes(&mut seed);
+                        seed
+                    })
+                    .collect(),
+            );
+        }
+
+        let refs: Vec<Vec<&[u8]>> = owned
+            .iter()
+            .map(|set| set.iter().map(|s| s.as_slice()).collect())
+            .collect();
+        let sets: Vec<&[&[u8]]> = refs.iter().map(|s| s.as_slice()).collect();
+
+        let mut got = alloc::vec![None; sets.len()];
+        find_program_addresses(&sets, &program_id, &mut got);
+
+        for (i, set) in sets.iter().enumerate() {
+            assert_eq!(
+                got[i],
+                try_find_program_address_serial(set, &program_id),
+                "set {i} disagreed"
+            );
+        }
+    }
+
+    /// A batch smaller than one lane group still has to work
+    #[test]
+    fn batch_shorter_than_a_lane_group() {
+        let program_id = Address::new_from_array([5u8; 32]);
+        let seeds: [&[u8]; 2] = [b"node", &[8u8; 32]];
+        let sets: [&[&[u8]]; 1] = [&seeds];
+        let mut got = [None; 1];
+        find_program_addresses(&sets, &program_id, &mut got);
+        assert_eq!(got[0], try_find_program_address_serial(&seeds, &program_id));
+    }
+
+    #[test]
+    fn batch_of_nothing_is_fine() {
+        let program_id = Address::new_from_array([5u8; 32]);
+        find_program_addresses(&[], &program_id, &mut []);
+    }
+}
+
+/// Both grind paths, so a bench can compare them in one binary
+#[cfg(all(
+    not(any(target_os = "solana", target_arch = "bpf")),
+    feature = "batch-pda",
+    feature = "dev-context-only-utils"
+))]
+pub mod grind {
+    use crate::Address;
+
+    pub fn batched(seeds: &[&[u8]], program_id: &Address) -> Option<(Address, u8)> {
+        super::try_find_program_address_width(seeds, program_id, tape_sha256::lane_width())
+    }
+
+    pub fn serial(seeds: &[&[u8]], program_id: &Address) -> Option<(Address, u8)> {
+        super::try_find_program_address_serial(seeds, program_id)
+    }
+
+    /// The batched path pinned to one lane, isolating the shared-message reuse
+    pub fn serial_reuse(seeds: &[&[u8]], program_id: &Address) -> Option<(Address, u8)> {
+        super::try_find_program_address_width(seeds, program_id, 1)
     }
 }
