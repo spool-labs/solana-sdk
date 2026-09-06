@@ -4884,7 +4884,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "tape-base58"
 version = "0.2.0"
-source = "git+https://github.com/spool-labs/base58?branch=main#9b6ead4739b8ec43030fe72eeb200d9fa844d420"
+source = "git+https://github.com/spool-labs/base58?rev=9b6ead4739b8ec43030fe72eeb200d9fa844d420#9b6ead4739b8ec43030fe72eeb200d9fa844d420"
 
 [[package]]
 name = "tape-sha256"

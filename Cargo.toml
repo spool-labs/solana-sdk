@@ -345,7 +345,7 @@ strum = "0.24"
 strum_macros = "0.24"
 subtle = { version = "2.6.1", default-features = false }
 syn = "2.0.117"
-tape-base58 = { git = "https://github.com/spool-labs/base58", branch = "main" }
+tape-base58 = { git = "https://github.com/spool-labs/base58", rev = "9b6ead4739b8ec43030fe72eeb200d9fa844d420" }
 tape-sha256 = "0.2.1"
 tempfile = "3.20.0"
 test-case = "3.3.1"
