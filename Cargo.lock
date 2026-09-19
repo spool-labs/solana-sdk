@@ -3139,7 +3139,7 @@ dependencies = [
 
 [[package]]
 name = "solana-address"
-version = "2.6.1"
+version = "2.7.0"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -3673,7 +3673,7 @@ dependencies = [
 
 [[package]]
 name = "solana-hash"
-version = "4.5.0"
+version = "4.6.0"
 dependencies = [
  "borsh",
  "bs58",
@@ -3732,13 +3732,14 @@ dependencies = [
  "serde_derive",
  "solana-define-syscall",
  "solana-instruction",
+ "solana-instruction-error",
  "solana-pubkey",
  "wincode",
 ]
 
 [[package]]
 name = "solana-instruction-error"
-version = "2.4.0"
+version = "2.5.0"
 dependencies = [
  "num-traits",
  "serde",
@@ -4145,7 +4146,7 @@ dependencies = [
 
 [[package]]
 name = "solana-pubkey"
-version = "4.2.0"
+version = "4.3.0"
 dependencies = [
  "rand 0.9.5",
  "solana-address",
@@ -4424,7 +4425,7 @@ dependencies = [
 
 [[package]]
 name = "solana-signature"
-version = "3.4.1"
+version = "3.5.2"
 dependencies = [
  "bincode",
  "bs58",
@@ -4690,7 +4691,7 @@ dependencies = [
 
 [[package]]
 name = "solana-transaction-error"
-version = "3.3.2"
+version = "3.4.0"
 dependencies = [
  "serde",
  "serde_derive",
@@ -4884,7 +4885,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "tape-base58"
 version = "0.2.0"
-source = "git+https://github.com/spool-labs/base58?branch=main#9b6ead4739b8ec43030fe72eeb200d9fa844d420"
+source = "git+https://github.com/spool-labs/base58?rev=9b6ead4739b8ec43030fe72eeb200d9fa844d420#9b6ead4739b8ec43030fe72eeb200d9fa844d420"
 
 [[package]]
 name = "tape-sha256"
@@ -5465,9 +5466,9 @@ dependencies = [
 
 [[package]]
 name = "wincode"
-version = "0.5.5"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66d967db7705dc29120bb6e8ce5b5a2e27734ed5976d1c904e95bd238d1c3c5a"
+checksum = "bfc6339f1ba427bf7ad7c42403b28e524832ba2ddb5eef1bb2cc3b85db6b7b75"
 dependencies = [
  "bv",
  "pastey",
@@ -5479,9 +5480,9 @@ dependencies = [
 
 [[package]]
 name = "wincode-derive"
-version = "0.4.6"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15ab90b719560d0fda79c74550ad1c948d17b118765942838055ebaf34d67071"
+checksum = "11d582d9fc9d813264407a9e16bfa16846ccf15ef032f9bbcd700741bdc00255"
 dependencies = [
  "darling",
  "proc-macro2",
