@@ -221,6 +221,26 @@ impl SanitizedTransaction {
         }
     }
 
+    /// Convert this sanitized transaction into a versioned transaction, moving the message
+    /// out of it.
+    pub fn into_versioned_transaction(self) -> VersionedTransaction {
+        let signatures = self.signatures;
+        match self.message {
+            SanitizedMessage::Legacy(legacy_message) => VersionedTransaction {
+                message: VersionedMessage::Legacy(legacy_message.message.into_owned()),
+                signatures,
+            },
+            SanitizedMessage::V0(sanitized_msg) => VersionedTransaction {
+                signatures,
+                message: VersionedMessage::V0(sanitized_msg.message.into_owned()),
+            },
+            SanitizedMessage::V1(sanitized_msg) => VersionedTransaction {
+                message: VersionedMessage::V1(sanitized_msg.message.into_owned()),
+                signatures,
+            },
+        }
+    }
+
     /// Validate and return the account keys locked by this transaction
     pub fn get_account_locks(
         &self,
@@ -489,5 +509,38 @@ mod tests {
         assert_eq!(signed_bytes[0], solana_message::v1::V1_PREFIX);
 
         sanitized.verify().unwrap();
+    }
+
+    #[test]
+    fn test_into_versioned_transaction_moves_an_owned_message() {
+        let payer = Keypair::new();
+        let program_id = solana_address::Address::new_unique();
+        let instruction = Instruction::new_with_bytes(
+            program_id,
+            &[1, 2, 3],
+            vec![AccountMeta::new(payer.pubkey(), true)],
+        );
+        let mut tx = Transaction::new_with_payer(&[instruction], Some(&payer.pubkey()));
+        tx.sign(&[&payer], Hash::new_unique());
+
+        let sanitized = SanitizedTransaction::try_create(
+            VersionedTransaction::from(tx),
+            MessageHash::Compute,
+            Some(false),
+            SimpleAddressLoader::Disabled,
+            &HashSet::default(),
+        )
+        .unwrap();
+
+        let round_trip = sanitized.to_versioned_transaction();
+        let SanitizedMessage::Legacy(legacy) = &sanitized.message else {
+            panic!("a legacy transaction sanitizes to a legacy message");
+        };
+        // An owned message moves, so the account keys come back on the same allocation.
+        let keys = legacy.message.account_keys.as_ptr();
+
+        let moved = sanitized.into_versioned_transaction();
+        assert_eq!(moved, round_trip);
+        assert_eq!(moved.message.static_account_keys().as_ptr(), keys);
     }
 }
